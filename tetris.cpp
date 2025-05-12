@@ -58,38 +58,27 @@ bool tetris::containment(piece const& p, int x, int y) const {
 }
 
 void tetris::insert(piece const& p, int x) {
-    // Trova la y massima possibile (cioè il punto più basso dove può cadere il pezzo)
+    // Trova y massimo
     int y = 0;
-    while (containment(p, x, y + 1)) {
-        ++y;
-    }
+    while (containment(p, x, y + 1)) ++y;
 
-    // Se nemmeno y=0 è valido, GAME OVER
-    if (!containment(p, x, y)) {
-        throw tetris_exception("GAME OVER");
-    }
+    if (!containment(p, x, y)) throw tetris_exception("GAME OVER");
 
-    // Aggiungi il pezzo nella lista
     add(p, x, y);
 
-    // Lambda interna per controllare se una riga è piena
+    // Lambda: controlla se una riga è piena
     auto is_row_full = [this](int r) -> bool {
         for (uint32_t x = 0; x < m_width; ++x) {
             bool found = false;
-
             for (node* n = m_field; n != nullptr; n = n->next) {
                 const piece& p = n->tp.p;
-                int px = n->tp.x;
-                int py = n->tp.y;
+                int px = n->tp.x, py = n->tp.y;
                 uint32_t side = p.side();
-
                 for (uint32_t i = 0; i < side; ++i) {
                     for (uint32_t j = 0; j < side; ++j) {
                         if (!p(i, j)) continue;
-
                         int fx = px + j;
                         int fy = py + (side - 1 - i);
-
                         if (fx == int(x) && fy == r) {
                             found = true;
                             goto found_cell;
@@ -103,31 +92,36 @@ void tetris::insert(piece const& p, int x) {
         return true;
     };
 
-    // Loop per tagliare righe, rimuovere pezzi vuoti, e farli cadere se possibile
+    // Lambda: taglia riga r da tutti i pezzi che la toccano
+    auto cut_row = [this](int r) {
+        for (node* n = m_field; n != nullptr; n = n->next) {
+            piece& p = n->tp.p;
+            int py = n->tp.y;
+            uint32_t side = p.side();
+
+            if (r >= py && r < py + int(side)) {
+                uint32_t i = side - 1 - (r - py);
+                if (i < side) {
+                    p.cut_row(i);
+                }
+            }
+        }
+    };
+
+    // Loop: taglia, rimuovi vuoti, fai cadere pezzi
     bool changed = true;
     while (changed) {
         changed = false;
 
-        // 1. Trova righe piene e tagliale
         for (int r = 0; r < int(m_height); ++r) {
             if (is_row_full(r)) {
-                // Taglieremo con una funzione che scriveremo dopo (cut_row)
-                for (node* n = m_field; n != nullptr; n = n->next) {
-                    piece& p = n->tp.p;
-                    int py = n->tp.y;
-                    uint32_t side = p.side();
-
-                    if (r >= py && r < py + int(side)) {
-                        p.cut_row(side - 1 - (r - py));
-                    }
-                }
-
+                cut_row(r);
                 m_score += m_width;
                 changed = true;
             }
         }
 
-        // 2. Rimuovi pezzi vuoti
+        // Rimuovi pezzi vuoti
         node** curr = &m_field;
         while (*curr) {
             if ((*curr)->tp.p.empty()) {
@@ -140,7 +134,7 @@ void tetris::insert(piece const& p, int x) {
             }
         }
 
-        // 3. Fai scendere i pezzi se possibile
+        // Fai cadere i pezzi
         for (node* n = m_field; n != nullptr; ++n) {
             while (containment(n->tp.p, n->tp.x, n->tp.y - 1)) {
                 --(n->tp.y);
@@ -149,5 +143,57 @@ void tetris::insert(piece const& p, int x) {
         }
     }
 }
+
+void tetris::print_ascii_art(std::ostream& os) const {
+    // Alloca la griglia m_height x m_width e inizializzala a 0
+    int** grid = new int*[m_height];
+    for (uint32_t i = 0; i < m_height; ++i) {
+        grid[i] = new int[m_width];
+        for (uint32_t j = 0; j < m_width; ++j) {
+            grid[i][j] = 0;
+        }
+    }
+
+    // Riempie la griglia con i colori dei pezzi
+    for (node* n = m_field; n != nullptr; n = n->next) {
+        const piece& p = n->tp.p;
+        int px = n->tp.x;
+        int py = n->tp.y;
+        uint32_t side = p.side();
+        int color = p.color();
+
+        for (uint32_t i = 0; i < side; ++i) {
+            for (uint32_t j = 0; j < side; ++j) {
+                if (!p(i, j)) continue;
+
+                int gx = px + j;
+                int gy = py + (side - 1 - i);
+
+                if (gx >= 0 && gx < int(m_width) && gy >= 0 && gy < int(m_height)) {
+                    grid[gy][gx] = color;
+                }
+            }
+        }
+    }
+
+    // Stampa la griglia (dall’alto verso il basso)
+    for (int i = m_height - 1; i >= 0; --i) {
+        for (uint32_t j = 0; j < m_width; ++j) {
+            if (grid[i][j] != 0) {
+                os << "\033[48;5;" << grid[i][j] << "m" << ' ' << "\033[m";
+            } else {
+                os << ' ';
+            }
+        }
+        os << '\n';
+    }
+
+    // Dealloca la griglia
+    for (uint32_t i = 0; i < m_height; ++i)
+        delete[] grid[i];
+    delete[] grid;
+}
+
+
 
 
