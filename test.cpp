@@ -1,26 +1,39 @@
+#include <iostream>
 #include "tetris.hpp"
 
 int main() {
-    // Costruisci un campo
-    tetris t(8, 6);
+    tetris t1(8, 6);  // campo 8x6
 
-    // Crea un pezzo 2x2 colorato
-    piece p(2, 75);  // 75 = colore giallo
-
-    // Imposta celle del pezzo manualmente
+    piece p(2, 75);  // pezzo 2x2 giallo
     p(0, 0) = true;
     p(0, 1) = true;
     p(1, 0) = true;
     p(1, 1) = true;
 
-    // Inserisci il pezzo nella colonna 3
-    t.insert(p, 3);
+    t1.insert(p, 3);  // inserisce nella colonna 3
 
-    // Stampa il campo
-    t.print_ascii_art(std::cout);
+    std::cout << "Tetris board:\n";
+    t1.print_ascii_art(std::cout);
 
-    // Stampa punteggio
-    std::cout << "Score: " << t.score() << "\n";
+    std::cout << "Score: " << t1.score() << "\n";
+
+    // Copia
+    tetris t2 = t1;
+
+    if (t1 == t2) {
+        std::cout << "Copia riuscita!\n";
+    }
+
+    // Modifica t2 e verifica che non siano più uguali
+    piece p2(2, 200);
+    p2(0, 0) = true;
+    p2(1, 0) = true;
+
+    t2.insert(p2, 5);
+
+    if (t1 != t2) {
+        std::cout << "I due Tetris sono ora diversi.\n";
+    }
 
     return 0;
 }

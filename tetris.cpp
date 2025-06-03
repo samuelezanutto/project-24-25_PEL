@@ -451,3 +451,236 @@ std::istream& operator>>(std::istream& is, tetris& t) {
 
     return is;
 }
+
+// PIECE IMPLEMENTATION---------------------------------------------------------------------------------------------------------
+
+piece::piece() : m_side(0), m_color(0), m_grid(nullptr) {}
+
+piece::piece(uint32_t s, uint8_t c) : m_side(s), m_color(c) {
+    m_grid = new bool*[m_side];
+    for (uint32_t i = 0; i < m_side; ++i) {
+        m_grid[i] = new bool[m_side];
+        for (uint32_t j = 0; j < m_side; ++j)
+            m_grid[i][j] = false;
+    }
+}
+
+piece::~piece() {
+    for (uint32_t i = 0; i < m_side; ++i)
+        delete[] m_grid[i];
+    delete[] m_grid;
+}
+
+piece::piece(piece const& rhs) : m_side(rhs.m_side), m_color(rhs.m_color) {
+    m_grid = new bool*[m_side];
+    for (uint32_t i = 0; i < m_side; ++i) {
+        m_grid[i] = new bool[m_side];
+        for (uint32_t j = 0; j < m_side; ++j)
+            m_grid[i][j] = rhs.m_grid[i][j];
+    }
+}
+
+piece::piece(piece&& rhs) : m_side(rhs.m_side), m_color(rhs.m_color), m_grid(rhs.m_grid) {
+    rhs.m_side = 0;
+    rhs.m_color = 0;
+    rhs.m_grid = nullptr;
+}
+
+piece& piece::operator=(piece const& rhs) {
+    if (this == &rhs) return *this;
+
+    // Dealloca memoria esistente
+    for (uint32_t i = 0; i < m_side; ++i)
+        delete[] m_grid[i];
+    delete[] m_grid;
+
+    // Copia nuovi dati
+    m_side = rhs.m_side;
+    m_color = rhs.m_color;
+
+    m_grid = new bool*[m_side];
+    for (uint32_t i = 0; i < m_side; ++i) {
+        m_grid[i] = new bool[m_side];
+        for (uint32_t j = 0; j < m_side; ++j)
+            m_grid[i][j] = rhs.m_grid[i][j];
+    }
+
+    return *this;
+}
+
+piece& piece::operator=(piece&& rhs) {
+    if (this == &rhs) return *this;
+
+    // Dealloca memoria esistente
+    for (uint32_t i = 0; i < m_side; ++i)
+        delete[] m_grid[i];
+    delete[] m_grid;
+
+    // Prendi proprietà
+    m_side = rhs.m_side;
+    m_color = rhs.m_color;
+    m_grid = rhs.m_grid;
+
+    // Reset rhs
+    rhs.m_side = 0;
+    rhs.m_color = 0;
+    rhs.m_grid = nullptr;
+
+    return *this;
+}
+
+
+bool& piece::operator()(uint32_t i, uint32_t j) {
+    assert(i < m_side && j < m_side);
+    return m_grid[i][j];
+}
+
+bool piece::operator()(uint32_t i, uint32_t j) const {
+    assert(i < m_side && j < m_side);
+    return m_grid[i][j];
+}
+
+uint32_t piece::side() const {
+    return m_side;
+}
+
+int piece::color() const {
+    return m_color;
+}
+
+bool piece::empty() const {
+    for (uint32_t i = 0; i < m_side; ++i)
+        for (uint32_t j = 0; j < m_side; ++j)
+            if (m_grid[i][j]) return false;
+    return true;
+}
+
+bool piece::full() const {
+    for (uint32_t i = 0; i < m_side; ++i)
+        for (uint32_t j = 0; j < m_side; ++j)
+            if (!m_grid[i][j]) return false;
+    return true;
+}
+
+bool piece::empty(uint32_t i, uint32_t j, uint32_t s) const {
+    if (i + s > m_side || j + s > m_side) return false;
+
+    for (uint32_t x = i; x < i + s; ++x)
+        for (uint32_t y = j; y < j + s; ++y)
+            if (m_grid[x][y]) return false;
+    return true;
+}
+
+bool piece::full(uint32_t i, uint32_t j, uint32_t s) const {
+    if (i + s > m_side || j + s > m_side) return false;
+
+    for (uint32_t x = i; x < i + s; ++x)
+        for (uint32_t y = j; y < j + s; ++y)
+            if (!m_grid[x][y]) return false;
+    return true;
+}
+
+void piece::rotate() {
+    bool** temp = new bool*[m_side];
+    for (uint32_t i = 0; i < m_side; ++i)
+        temp[i] = new bool[m_side];
+
+    for (uint32_t i = 0; i < m_side; ++i) {
+        for (uint32_t j = 0; j < m_side; ++j) {
+            temp[j][m_side - 1 - i] = m_grid[i][j];
+        }
+    }
+
+    // Dealloca griglia attuale
+    for (uint32_t i = 0; i < m_side; ++i)
+        delete[] m_grid[i];
+    delete[] m_grid;
+
+    m_grid = temp;
+}
+
+void piece::cut_row(uint32_t i) {
+    assert(i < m_side);
+    for (uint32_t j = 0; j < m_side; ++j) {
+        m_grid[i][j] = false;
+    }
+}
+
+void piece::print_ascii_art(std::ostream& os) const {
+    for (int i = m_side - 1; i >= 0; --i) {  // stampa dall’alto verso il basso
+        for (uint32_t j = 0; j < m_side; ++j) {
+            if (m_grid[i][j]) {
+                os << "\033[48;5;" << int(m_color) << "m" << ' ' << "\033[m";
+            } else {
+                os << ' ';
+            }
+        }
+        os << '\n';
+    }
+}
+
+std::ostream& operator<<(std::ostream& os, piece const& p) {
+    os << p.side() << ' ' << p.color() << " (";
+    for (uint32_t i = 0; i < p.side(); ++i) {
+        os << '(';
+        for (uint32_t j = 0; j < p.side(); ++j) {
+            os << (p(i, j) ? "[]" : "()");
+        }
+        os << ')';
+    }
+    os << ')';
+    return os;
+}
+
+std::istream& operator>>(std::istream& is, piece& p) {
+    uint32_t s;
+    int color;
+    char ch;
+
+    is >> s >> color;
+    if (!is) return is;
+
+    piece temp(s, color);
+
+    is >> std::ws >> ch;  // dovremmo leggere '('
+    if (ch != '(') {
+        is.setstate(std::ios::failbit);
+        return is;
+    }
+
+    for (uint32_t i = 0; i < s; ++i) {
+        is >> ch;  // '(' della riga
+        if (ch != '(') {
+            is.setstate(std::ios::failbit);
+            return is;
+        }
+
+        for (uint32_t j = 0; j < s; ++j) {
+            char c1, c2;
+            is >> c1 >> c2;
+            if (c1 == '[' && c2 == ']') {
+                temp(i, j) = true;
+            } else if (c1 == '(' && c2 == ')') {
+                temp(i, j) = false;
+            } else {
+                is.setstate(std::ios::failbit);
+                return is;
+            }
+        }
+
+        is >> ch;  // ')' della riga
+        if (ch != ')') {
+            is.setstate(std::ios::failbit);
+            return is;
+        }
+    }
+
+    is >> ch;  // ')' finale
+    if (ch != ')') {
+        is.setstate(std::ios::failbit);
+        return is;
+    }
+
+    p = std::move(temp);
+    return is;
+}
