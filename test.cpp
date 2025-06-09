@@ -1,39 +1,78 @@
-#include <iostream>
 #include "tetris.hpp"
+#include <sstream>
 
 int main() {
-    tetris t1(8, 6);  // campo 8x6
+    std::cout << "=== Test classe piece ===\n";
 
-    piece p(2, 75);  // pezzo 2x2 giallo
-    p(0, 0) = true;
-    p(0, 1) = true;
-    p(1, 0) = true;
-    p(1, 1) = true;
+    piece p1(2, 75); // 2x2, colore 75
+    p1(0, 0) = true;
+    p1(0, 1) = false;
+    p1(1, 0) = true;
+    p1(1, 1) = true;
 
-    t1.insert(p, 3);  // inserisce nella colonna 3
+    std::cout << "Pezzo p1:\n";
+    p1.print_ascii_art(std::cout);
 
-    std::cout << "Tetris board:\n";
-    t1.print_ascii_art(std::cout);
+    std::cout << "\nRuoto p1:\n";
+    p1.rotate();
+    p1.print_ascii_art(std::cout);
 
-    std::cout << "Score: " << t1.score() << "\n";
+    std::cout << "\nTaglio riga 1:\n";
+    p1.cut_row(1);
+    p1.print_ascii_art(std::cout);
+
+    std::cout << "\nVerifica empty(): " << (p1.empty() ? "SI" : "NO") << "\n";
+
+    std::cout << "\nSerializzo p1:\n";
+    std::ostringstream oss;
+    oss << p1;
+    std::cout << oss.str() << "\n";
+
+    std::istringstream iss(oss.str());
+    piece p2;
+    iss >> p2;
+
+    std::cout << "\nDeserializzato p2:\n";
+    p2.print_ascii_art(std::cout);
+
+    std::cout << "\np1 == p2? " << (p1 == p2 ? "SI" : "NO") << "\n";
+
+    // ---------------------
+
+    std::cout << "\n=== Test classe tetris ===\n";
+
+    tetris game(6, 6);  // campo 6x6
+
+    piece t1(2, 200);  // pezzo 2x2 rosso
+    t1(0, 0) = true;
+    t1(0, 1) = true;
+    t1(1, 0) = true;
+    t1(1, 1) = true;
+
+    game.insert(t1, 2);
+
+    std::cout << "\nCampo dopo insert:\n";
+    game.print_ascii_art(std::cout);
+    std::cout << "Score: " << game.score() << "\n";
 
     // Copia
-    tetris t2 = t1;
+    tetris copy = game;
+    std::cout << "\nCopia uguale? " << (game == copy ? "SI" : "NO") << "\n";
 
-    if (t1 == t2) {
-        std::cout << "Copia riuscita!\n";
-    }
+    // Serializza e deserializza
+    std::ostringstream game_out;
+    game_out << game;
 
-    // Modifica t2 e verifica che non siano più uguali
-    piece p2(2, 200);
-    p2(0, 0) = true;
-    p2(1, 0) = true;
+    std::cout << "\nSerializzato:\n" << game_out.str();
 
-    t2.insert(p2, 5);
+    std::istringstream game_in(game_out.str());
+    tetris loaded;
+    game_in >> loaded;
 
-    if (t1 != t2) {
-        std::cout << "I due Tetris sono ora diversi.\n";
-    }
+    std::cout << "\nCampo deserializzato:\n";
+    loaded.print_ascii_art(std::cout);
+
+    std::cout << "\nDeserializzato uguale all’originale? " << (loaded == game ? "SI" : "NO") << "\n";
 
     return 0;
 }

@@ -684,3 +684,19 @@ std::istream& operator>>(std::istream& is, piece& p) {
     p = std::move(temp);
     return is;
 }
+
+bool piece::operator==(piece const& rhs) const {
+    if (m_side != rhs.m_side || m_color != rhs.m_color)
+        return false;
+
+    for (uint32_t i = 0; i < m_side; ++i)
+        for (uint32_t j = 0; j < m_side; ++j)
+            if (m_grid[i][j] != rhs.m_grid[i][j])
+                return false;
+
+    return true;
+}
+
+bool piece::operator!=(piece const& rhs) const {
+    return !(*this == rhs);
+}
