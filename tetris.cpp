@@ -76,11 +76,15 @@ bool tetris::containment(piece const& p, int x, int y) const {
 }
 
 void tetris::insert(piece const& p, int x) {
-    // Trova y massimo
-    int y = 0;
-    while (containment(p, x, y + 1)) ++y;
+    if (p.empty())
+        throw tetris_exception("Invalid insert: empty piece");
 
-    if (!containment(p, x, y)) throw tetris_exception("GAME OVER");
+    // Trova y massimo dove il pezzo può essere posizionato
+    int y = 0;
+    while (y + 1 < int(m_height) && containment(p, x, y + 1)) ++y;
+
+    if (!containment(p, x, y))
+        throw tetris_exception("GAME OVER");
 
     add(p, x, y);
 
@@ -117,20 +121,26 @@ void tetris::insert(piece const& p, int x) {
             int py = n->tp.y;
             uint32_t side = p.side();
 
-            if (r >= py && r < py + int(side)) {
-                uint32_t i = side - 1 - (r - py);
-                if (i < side) {
-                    p.cut_row(i);
-                }
+            // r deve essere dentro il range verticale del pezzo
+            int relative = r - py;
+            if (relative < 0 || relative >= int(side)) continue;
+
+            uint32_t i = side - 1 - relative;
+
+            // Verifica i entro i limiti
+            if (i < side) {
+                p.cut_row(i);
             }
         }
     };
 
-    // Loop: taglia, rimuovi vuoti, fai cadere pezzi
+
+    // Loop: taglia righe piene, rimuovi pezzi vuoti, fai cadere i pezzi
     bool changed = true;
     while (changed) {
         changed = false;
 
+        // 1. Taglia righe piene
         for (int r = 0; r < int(m_height); ++r) {
             if (is_row_full(r)) {
                 cut_row(r);
@@ -139,7 +149,7 @@ void tetris::insert(piece const& p, int x) {
             }
         }
 
-        // Rimuovi pezzi vuoti
+        // 2. Rimuovi pezzi vuoti
         node** curr = &m_field;
         while (*curr) {
             if ((*curr)->tp.p.empty()) {
@@ -152,15 +162,21 @@ void tetris::insert(piece const& p, int x) {
             }
         }
 
-        // Fai cadere i pezzi
+        // 3. Fai cadere i pezzi se possono scendere
         for (node* n = m_field; n != nullptr; ++n) {
-            while (containment(n->tp.p, n->tp.x, n->tp.y - 1)) {
-                --(n->tp.y);
-                changed = true;
+            while (n->tp.y > 0) {
+                if (containment(n->tp.p, n->tp.x, n->tp.y - 1)) {
+                    --(n->tp.y);
+                    changed = true;
+                } else {
+                    break;
+                }
             }
+
         }
     }
 }
+
 
 void tetris::print_ascii_art(std::ostream& os) const {
     // Alloca la griglia m_height x m_width e inizializzala a 0
@@ -388,11 +404,14 @@ std::istream& operator>>(std::istream& is, tetris& t) {
     uint32_t score, width, height;
     is >> score >> width >> height;
 
-    if (!is) throw tetris_exception("Invalid header format");
+    if (!is) {
+        throw tetris_exception("Invalid header format");
+    }
 
+    // Crea nuovo oggetto tetris
     t = tetris(width, height, score);
 
-    // Lista temporanea (in coda)
+    // Nodo temporaneo per costruire la lista dei pezzi (in ordine diretto)
     struct temp_node {
         piece p;
         int x, y;
@@ -402,37 +421,24 @@ std::istream& operator>>(std::istream& is, tetris& t) {
     temp_node* head = nullptr;
     temp_node* tail = nullptr;
 
-    while (is) {
+    // Leggi tutti i pezzi
+    while (true) {
         piece p;
         int x, y;
 
-        std::streampos pos = is.tellg();  // salva posizione
-
-        try {
-            is >> p >> x >> y;
-        } catch (...) {
-            is.clear();
-            is.seekg(pos);
-            break;
-        }
-
-        if (!is) break;
+        if (!(is >> p >> x >> y)) break;
 
         temp_node* new_node = new temp_node{p, x, y, nullptr};
 
-        if (!head) {
+        if (!head)
             head = tail = new_node;
-        } else {
+        else {
             tail->next = new_node;
             tail = new_node;
         }
     }
 
-    // Inserisci i pezzi **in ordine originale** usando `add` (che mette in testa)
-    // → inseriamo partendo dalla fine della lista temporanea
-    // Quindi dobbiamo fare **una seconda passata** al contrario
-
-    // Step 1: inverte la lista temporanea
+    // Inverti la lista per usare add() (che inserisce in testa)
     temp_node* reversed = nullptr;
     while (head) {
         temp_node* tmp = head;
@@ -441,7 +447,7 @@ std::istream& operator>>(std::istream& is, tetris& t) {
         reversed = tmp;
     }
 
-    // Step 2: inserisce nella lista tetris
+    // Inserisci i pezzi nel tetris
     while (reversed) {
         t.add(reversed->p, reversed->x, reversed->y);
         temp_node* tmp = reversed;
@@ -451,6 +457,7 @@ std::istream& operator>>(std::istream& is, tetris& t) {
 
     return is;
 }
+
 
 // PIECE IMPLEMENTATION---------------------------------------------------------------------------------------------------------
 
@@ -549,11 +556,16 @@ int piece::color() const {
 }
 
 bool piece::empty() const {
-    for (uint32_t i = 0; i < m_side; ++i)
-        for (uint32_t j = 0; j < m_side; ++j)
+    if (!m_grid || m_side == 0) return true;
+    for (uint32_t i = 0; i < m_side; ++i) {
+        if (!m_grid[i]) continue;  // protezione ulteriore
+        for (uint32_t j = 0; j < m_side; ++j) {
             if (m_grid[i][j]) return false;
+        }
+    }
     return true;
 }
+
 
 bool piece::full() const {
     for (uint32_t i = 0; i < m_side; ++i)
@@ -600,11 +612,18 @@ void piece::rotate() {
 }
 
 void piece::cut_row(uint32_t i) {
-    assert(i < m_side);
-    for (uint32_t j = 0; j < m_side; ++j) {
-        m_grid[i][j] = false;
-    }
+    if (!m_grid || i >= m_side) return;
+
+    delete[] m_grid[i];
+
+    for (int j = i; j > 0; --j)
+        m_grid[j] = m_grid[j - 1];
+
+    m_grid[0] = new bool[m_side];
+    for (uint32_t j = 0; j < m_side; ++j)
+        m_grid[0][j] = false;
 }
+
 
 void piece::print_ascii_art(std::ostream& os) const {
     for (int i = m_side - 1; i >= 0; --i) {  // stampa dall’alto verso il basso

@@ -49,7 +49,9 @@ int main() {
     t1(1, 0) = true;
     t1(1, 1) = true;
 
+    std::cout << "Inserisco pezzo t1...\n";
     game.insert(t1, 2);
+    std::cout << "Inserimento completato.\n";
 
     std::cout << "\nCampo dopo insert:\n";
     game.print_ascii_art(std::cout);
@@ -64,10 +66,11 @@ int main() {
     game_out << game;
 
     std::cout << "\nSerializzato:\n" << game_out.str();
-
+    
     std::istringstream game_in(game_out.str());
     tetris loaded;
     game_in >> loaded;
+    std::cout << "\nDeserializzazione completata\n";
 
     std::cout << "\nCampo deserializzato:\n";
     loaded.print_ascii_art(std::cout);
