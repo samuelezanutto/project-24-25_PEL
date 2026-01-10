@@ -100,7 +100,7 @@ void tetris::insert(piece const& p, int x) {
                     for (uint32_t j = 0; j < side; ++j) {
                         if (!p(i, j)) continue;
                         int fx = px + j;
-                        int fy = py + (side - 1 - i);
+                        int fy = py + i;
                         if (fx == int(x) && fy == r) {
                             found = true;
                             goto found_cell;
@@ -125,7 +125,7 @@ void tetris::insert(piece const& p, int x) {
             int relative = r - py;
             if (relative < 0 || relative >= int(side)) continue;
 
-            uint32_t i = side - 1 - relative;
+            uint32_t i = relative;
 
             // Verifica i entro i limiti
             if (i < side) {
@@ -407,12 +407,16 @@ std::istream& operator>>(std::istream& is, tetris& t) {
 
     piece p;
     int x, y;
-    while (is >> p >> x >> y) {
-        temp.add(p, x, y);
+    
+    while (is >> std::ws, is.peek() != EOF) {  // Controlla se ci sono altri dati
+        is >> p >> x >> y;
+        
+        if (is.fail() && !is.eof())
+            throw tetris_exception("Error reading pieces");
+            
+        if (is.good() || is.eof())
+            temp.add(p, x, y);
     }
-
-    if (is.fail() && !is.eof())
-        throw tetris_exception("Error reading pieces");
 
     t = std::move(temp);
     return is;
@@ -631,20 +635,64 @@ std::ostream& operator<<(std::ostream& os, piece const& p) {
     return os;
 }
 
+
+static void parse_quadrant_helper(std::istream& is, piece& temp, uint32_t i, uint32_t j, uint32_t size) {
+    char c1, c2;
+    
+    is >> std::ws;
+    if (!is.get(c1))
+        throw tetris_exception("Unexpected EOF reading quadrant");
+    
+    if (c1 == '(') {
+        // Potrebbe essere () (pieno) o una struttura ricorsiva
+        is >> std::ws;
+        if (is.eof())
+            throw tetris_exception("Unexpected EOF after '('");
+        
+        char next = is.peek();
+        if (next == ')') {
+            // È () - quadrante pieno
+            is.get(c2);  // consuma ')'
+            // Riempie tutto il quadrante
+            for (uint32_t x = i; x < i + size; x++) {
+                for (uint32_t y = j; y < j + size; y++) {
+                    temp(x, y) = true;
+                }
+            }
+        } else {
+            // struttura ricorsiva (TL TR BL BR)
+            uint32_t half = size / 2;
+            parse_quadrant_helper(is, temp, i, j, half);              // TL
+            parse_quadrant_helper(is, temp, i, j + half, half);       // TR
+            parse_quadrant_helper(is, temp, i + half, j, half);       // BL
+            parse_quadrant_helper(is, temp, i + half, j + half, half); // BR
+            
+            is >> std::ws;
+            if (!is.get(c2) || c2 != ')')
+                throw tetris_exception("Expected ')' after recursive structure");
+        }
+    } else if (c1 == '[') {
+        // Deve essere [] - quadrante vuoto
+        if (!is.get(c2) || c2 != ']')
+            throw tetris_exception("Expected ']' after '['");
+        
+        // Non fa nulla - il quadrante è già false per default
+    } else {
+        std::string msg = "Expected '(' or '[', got '";
+        msg += c1;
+        msg += "'";
+        throw tetris_exception(msg);
+    }
+}
+
 std::istream& operator>>(std::istream& is, piece& p) {
     uint32_t s;
     int color;
 
-    // Salva lo stato dello stream prima di leggere
-    std::ios::iostate old_state = is.rdstate();
-    
     if (!(is >> s >> color)) {
-        if (is.eof() && old_state != std::ios::eofbit)
-            throw tetris_exception("Unexpected EOF reading piece header");
         throw tetris_exception("Invalid piece header");
     }
 
-    // Validazioni ESPLICITE (richieste dai test)
     if (s == 0 || (s & (s - 1)) != 0)
         throw tetris_exception("Invalid piece side");
 
@@ -653,51 +701,8 @@ std::istream& operator>>(std::istream& is, piece& p) {
 
     piece temp(s, static_cast<uint8_t>(color));
 
-    char ch;
-    is >> std::ws;
-    
-    if (!is.get(ch))
-        throw tetris_exception("Unexpected EOF: expected '('");
-    if (ch != '(')
-        throw tetris_exception("Expected '(' after piece header");
-
-    for (uint32_t i = 0; i < s; ++i) {
-        if (!is.get(ch))
-            throw tetris_exception("Unexpected EOF: expected '(' at row start");
-        if (ch != '(')
-            throw tetris_exception("Expected '(' at row start");
-
-        for (uint32_t j = 0; j < s; ++j) {
-            char c1, c2;
-            
-            if (!is.get(c1))
-                throw tetris_exception("Unexpected EOF reading cell");
-            if (!is.get(c2))
-                throw tetris_exception("Unexpected EOF reading cell");
-
-            if (c1 == '[' && c2 == ']')
-                temp(i, j) = true;
-            else if (c1 == '(' && c2 == ')')
-                temp(i, j) = false;
-            else {
-                std::string msg = "Invalid cell token: expected '[]' or '()', got '";
-                msg += c1;
-                msg += c2;
-                msg += "'";
-                throw tetris_exception(msg);
-            }
-        }
-
-        if (!is.get(ch))
-            throw tetris_exception("Unexpected EOF: expected ')' at row end");
-        if (ch != ')')
-            throw tetris_exception("Expected ')' at row end");
-    }
-
-    if (!is.get(ch))
-        throw tetris_exception("Unexpected EOF: expected final ')'");
-    if (ch != ')')
-        throw tetris_exception("Expected final ')'");
+    // Inizia il parsing dall'intero pezzo
+    parse_quadrant_helper(is, temp, 0, 0, s);
 
     p = std::move(temp);
     return is;
