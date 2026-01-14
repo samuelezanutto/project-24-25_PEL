@@ -87,7 +87,9 @@ void tetris::insert(piece const& p, int x) {
     // Trova la y più bassa possibile mantenendo y non-negativa
     int y = static_cast<int>(m_height) - static_cast<int>(p.side());
     if (y < 0) y = 0;
-    while (y > 0 && containment(p, x, y - 1)) --y;
+    while (containment(p, x, y - 1)) {
+        --y;
+    }
 
     if (!containment(p, x, y))
         throw tetris_exception("GAME OVER");
