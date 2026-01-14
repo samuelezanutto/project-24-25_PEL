@@ -45,7 +45,7 @@ bool tetris::containment(piece const& p, int x, int y) const {
             if (!p(i, j)) continue;
 
             int fx = x + j;
-            int fy = y + (side - 1 - i);  // griglia dal basso
+            int fy = y + i;  
 
             // Controllo limiti campo
             if (fx < 0 || fx >= int(m_width) || fy < 0 || fy >= int(m_height))
@@ -58,15 +58,20 @@ bool tetris::containment(piece const& p, int x, int y) const {
                 int oy = cur->tp.y;
                 uint32_t oside = other.side();
 
+                // Evita auto-collisione quando si verifica discesa dei pezzi stessi
+                if (&other == &p) {
+                    continue;
+                }
+
                 for (uint32_t oi = 0; oi < oside; ++oi) {
                     for (uint32_t oj = 0; oj < oside; ++oj) {
                         if (!other(oi, oj)) continue;
 
                         int ofx = ox + oj;
-                        int ofy = oy + (oside - 1 - oi);
+                        int ofy = oy + oi; 
 
                         if (fx == ofx && fy == ofy)
-                            return false;  // collisione
+                            return false;
                     }
                 }
             }
@@ -79,14 +84,17 @@ void tetris::insert(piece const& p, int x) {
     if (p.empty())
         throw tetris_exception("Invalid insert: empty piece");
 
-    // Trova y massimo dove il pezzo può essere posizionato
-    int y = 0;
-    while (y + 1 < int(m_height) && containment(p, x, y + 1)) ++y;
+    // Trova la y più bassa possibile mantenendo y non-negativa
+    int y = static_cast<int>(m_height) - static_cast<int>(p.side());
+    if (y < 0) y = 0;
+    while (y > 0 && containment(p, x, y - 1)) --y;
 
     if (!containment(p, x, y))
         throw tetris_exception("GAME OVER");
 
     add(p, x, y);
+
+    // y rimane sempre >= 0 per rispettare la specifica
 
     // Lambda: controlla se una riga è piena
     auto is_row_full = [this](int r) -> bool {
@@ -116,23 +124,21 @@ void tetris::insert(piece const& p, int x) {
 
     // Lambda: taglia riga r da tutti i pezzi che la toccano
     auto cut_row = [this](int r) {
-        for (node* n = m_field; n != nullptr; n = n->next) {
-            piece& p = n->tp.p;
-            int py = n->tp.y;
-            uint32_t side = p.side();
+    for (node* n = m_field; n != nullptr; n = n->next) {
+        piece& p = n->tp.p;
+        int py = n->tp.y;
+        uint32_t side = p.side();
 
-            // r deve essere dentro il range verticale del pezzo
-            int relative = r - py;
-            if (relative < 0 || relative >= int(side)) continue;
+        int relative = r - py;
+        if (relative < 0 || relative >= int(side)) continue;
 
-            uint32_t i = relative;
+        uint32_t i = relative; 
 
-            // Verifica i entro i limiti
-            if (i < side) {
-                p.cut_row(i);
-            }
+        if (i < side) {
+            p.cut_row(i);
         }
-    };
+    }
+};
 
     // Loop: taglia righe piene, rimuovi pezzi vuoti, fai cadere i pezzi
     bool changed = true;
@@ -163,13 +169,9 @@ void tetris::insert(piece const& p, int x) {
 
         // 3. Fai cadere i pezzi se possono scendere
         for (node* n = m_field; n != nullptr; n = n->next) {
-            while (n->tp.y > 0) {
-                if (containment(n->tp.p, n->tp.x, n->tp.y - 1)) {
-                    --(n->tp.y);
-                    changed = true;
-                } else {
-                    break;
-                }
+            while (n->tp.y > 0 && containment(n->tp.p, n->tp.x, n->tp.y - 1)) {
+                --(n->tp.y);
+                changed = true;
             }
         }
     }
@@ -177,7 +179,6 @@ void tetris::insert(piece const& p, int x) {
 
 
 void tetris::print_ascii_art(std::ostream& os) const {
-    // Alloca la griglia m_height x m_width e inizializzala a 0
     int** grid = new int*[m_height];
     for (uint32_t i = 0; i < m_height; ++i) {
         grid[i] = new int[m_width];
@@ -186,7 +187,6 @@ void tetris::print_ascii_art(std::ostream& os) const {
         }
     }
 
-    // Riempie la griglia con i colori dei pezzi
     for (node* n = m_field; n != nullptr; n = n->next) {
         const piece& p = n->tp.p;
         int px = n->tp.x;
@@ -199,7 +199,7 @@ void tetris::print_ascii_art(std::ostream& os) const {
                 if (!p(i, j)) continue;
 
                 int gx = px + j;
-                int gy = py + (side - 1 - i);
+                int gy = py + i; 
 
                 if (gx >= 0 && gx < int(m_width) && gy >= 0 && gy < int(m_height)) {
                     grid[gy][gx] = color;
@@ -208,7 +208,7 @@ void tetris::print_ascii_art(std::ostream& os) const {
         }
     }
 
-    // Stampa la griglia (dall’alto verso il basso)
+    // Stampa la griglia (dall'alto verso il basso)
     for (int i = m_height - 1; i >= 0; --i) {
         for (uint32_t j = 0; j < m_width; ++j) {
             if (grid[i][j] != 0) {
@@ -220,7 +220,6 @@ void tetris::print_ascii_art(std::ostream& os) const {
         os << '\n';
     }
 
-    // Dealloca la griglia
     for (uint32_t i = 0; i < m_height; ++i)
         delete[] grid[i];
     delete[] grid;
@@ -596,7 +595,8 @@ void piece::rotate() {
 }
 
 void piece::cut_row(uint32_t i) {
-    if (!m_grid || i >= m_side) return;
+    if (i >= m_side || !m_grid)
+        throw tetris_exception("cut_row: index out of bounds");
 
     delete[] m_grid[i];
 
@@ -622,24 +622,54 @@ void piece::print_ascii_art(std::ostream& os) const {
     }
 }
 
-std::ostream& operator<<(std::ostream& os, piece const& p) {
-    os << p.side() << ' ' << p.color() << " (";
-    for (uint32_t i = 0; i < p.side(); ++i) {
-        os << '(';
-        for (uint32_t j = 0; j < p.side(); ++j) {
-            os << (p(i, j) ? "[]" : "()");
-        }
-        os << ')';
+static void write_quadrant(std::ostream& os, piece const& p, uint32_t i, uint32_t j, uint32_t size) {
+    if (size == 0)
+        throw tetris_exception("Invalid quadrant size");
+
+    if (size == 1) {
+        os << (p(i, j) ? "()" : "[]");
+        return;
     }
+
+    if (p.full(i, j, size)) {
+        os << "()";
+        return;
+    }
+    if (p.empty(i, j, size)) {
+        os << "[]";
+        return;
+    }
+
+    uint32_t half = size / 2;
+    os << '(';
+    write_quadrant(os, p, i, j, half);              // TL
+    write_quadrant(os, p, i, j + half, half);       // TR
+    write_quadrant(os, p, i + half, j, half);       // BL
+    write_quadrant(os, p, i + half, j + half, half); // BR
     os << ')';
+}
+
+std::ostream& operator<<(std::ostream& os, piece const& p) {
+    os << p.side() << ' ' << p.color() << ' ';
+    if (p.side() == 0) {
+        os << "[]";
+        return os;
+    }
+    write_quadrant(os, p, 0, 0, p.side());
     return os;
 }
 
 
 static void parse_quadrant_helper(std::istream& is, piece& temp, uint32_t i, uint32_t j, uint32_t size) {
+    if (size == 0)
+        throw tetris_exception("Invalid size");
+
     char c1, c2;
     
     is >> std::ws;
+    if (is.eof())
+        throw tetris_exception("Unexpected EOF");
+
     if (!is.get(c1))
         throw tetris_exception("Unexpected EOF reading quadrant");
     
