@@ -124,21 +124,21 @@ void tetris::insert(piece const& p, int x) {
 
     // Lambda: taglia riga r da tutti i pezzi che la toccano
     auto cut_row = [this](int r) {
-    for (node* n = m_field; n != nullptr; n = n->next) {
-        piece& p = n->tp.p;
-        int py = n->tp.y;
-        uint32_t side = p.side();
+        for (node* n = m_field; n != nullptr; n = n->next) {
+            piece& p = n->tp.p;
+            int py = n->tp.y;
+            uint32_t side = p.side();
 
-        int relative = r - py;
-        if (relative < 0 || relative >= int(side)) continue;
+            int relative = r - py;
+            if (relative < 0 || relative >= int(side)) continue;
 
-        uint32_t i = relative; 
+            uint32_t i = relative; 
 
-        if (i < side) {
-            p.cut_row(i);
+            if (i < side) {
+                p.cut_row(i);
+            }
         }
-    }
-};
+    };
 
     // Loop: taglia righe piene, rimuovi pezzi vuoti, fai cadere i pezzi
     bool changed = true;
@@ -146,11 +146,13 @@ void tetris::insert(piece const& p, int x) {
         changed = false;
 
         // 1. Taglia righe piene
-        for (int r = 0; r < int(m_height); ++r) {
+        for (int r = 0; r < int(m_height); ) {
             if (is_row_full(r)) {
                 cut_row(r);
                 m_score += m_width;
                 changed = true;
+            } else {
+                ++r;
             }
         }
 
@@ -556,7 +558,7 @@ bool piece::full() const {
 }
 
 bool piece::empty(uint32_t i, uint32_t j, uint32_t s) const {
-    if (i + s > m_side || j + s > m_side)
+    if (s == 0 || i + s > m_side || j + s > m_side)
         throw tetris_exception("Index out of bounds");
 
     for (uint32_t x = i; x < i + s; ++x)
@@ -566,7 +568,7 @@ bool piece::empty(uint32_t i, uint32_t j, uint32_t s) const {
 }
 
 bool piece::full(uint32_t i, uint32_t j, uint32_t s) const {
-    if (i + s > m_side || j + s > m_side)
+    if (s == 0 || i + s > m_side || j + s > m_side)
         throw tetris_exception("Index out of bounds");
 
     for (uint32_t x = i; x < i + s; ++x)
@@ -733,6 +735,10 @@ std::istream& operator>>(std::istream& is, piece& p) {
 
     // Inizia il parsing dall'intero pezzo
     parse_quadrant_helper(is, temp, 0, 0, s);
+
+    is >> std::ws;
+    if (is.peek() == '(' || is.peek() == '[')
+        throw tetris_exception("Extra data after piece");
 
     p = std::move(temp);
     return is;
