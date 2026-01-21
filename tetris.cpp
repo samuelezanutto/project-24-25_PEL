@@ -37,7 +37,7 @@ void tetris::add(piece const& p, int x, int y) {
 }
     
 bool tetris::containment(piece const& p, int x, int y) const {
-    if (y < 0) return false;  // y-coordinate cannot be negative
+    if (y < 0) return false;  // y negativa non è permessa
     
     uint32_t side = p.side();
     for (uint32_t i = 0; i < side; ++i) {
@@ -426,7 +426,7 @@ piece::piece() : m_side(0), m_color(0), m_grid(nullptr) {}
 piece::piece(uint32_t s, uint8_t c) : m_side(0), m_color(0), m_grid(nullptr) {
     if (s == 0)
         throw tetris_exception("Side must be non-zero and a power of two.");
-    // iterative check whether s is a power of two
+    
     uint32_t tmp = s;
     while (tmp > 1 && tmp % 2 == 0)
         tmp /= 2;
