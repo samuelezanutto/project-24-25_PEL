@@ -33,46 +33,40 @@ void tetris::add(piece const& p, int x, int y) {
     if (!containment(p, x, y))
         throw tetris_exception("Invalid add: piece out of bounds or overlapping");
 
-    node* new_node = new node{{p, x, y}, m_field};
-    m_field = new_node;
+     m_field = new node{{p, x, y}, m_field};
 }
     
 bool tetris::containment(piece const& p, int x, int y) const {
+    if (y < 0) return false;  // y-coordinate cannot be negative
+    
     uint32_t side = p.side();
-
     for (uint32_t i = 0; i < side; ++i) {
         for (uint32_t j = 0; j < side; ++j) {
             if (!p(i, j)) continue;
 
             int fx = x + j;
-            int fy = y + i;  
+            int fy = y + (side - 1 - i); 
 
-            // Controllo limiti campo
-            if (fx < 0 || fx >= int(m_width) || fy < 0 || fy >= int(m_height))
+            // Check bordi campo
+            if (fx < 0 || fx >= (int)m_width || fy < 0 || fy >= (int)m_height)
                 return false;
 
-            // Controllo sovrapposizione con altri pezzi
+            // Check collisione con altri pezzi
             for (node* cur = m_field; cur != nullptr; cur = cur->next) {
-                const piece& other = cur->tp.p;
+                // Se stiamo controllando un pezzo già nel campo contro se stesso, saltiamo
+                if (&cur->tp.p == &p) continue; 
+
                 int ox = cur->tp.x;
                 int oy = cur->tp.y;
-                uint32_t oside = other.side();
+                uint32_t oside = cur->tp.p.side();
 
-                // Evita auto-collisione quando si verifica discesa dei pezzi stessi
-                if (&other == &p) {
-                    continue;
-                }
+                int rel_x = fx - ox;
+                int rel_y = fy - oy;
 
-                for (uint32_t oi = 0; oi < oside; ++oi) {
-                    for (uint32_t oj = 0; oj < oside; ++oj) {
-                        if (!other(oi, oj)) continue;
-
-                        int ofx = ox + oj;
-                        int ofy = oy + oi; 
-
-                        if (fx == ofx && fy == ofy)
-                            return false;
-                    }
+                if (rel_x >= 0 && rel_x < (int)oside && rel_y >= 0 && rel_y < (int)oside) {
+                    // Mappa la coordinata di campo all'indice interno del pezzo esistente
+                    uint32_t oi = (oside - 1) - rel_y; 
+                    if (cur->tp.p(oi, rel_x)) return false;
                 }
             }
         }
@@ -84,19 +78,24 @@ void tetris::insert(piece const& p, int x) {
     if (p.empty())
         throw tetris_exception("Invalid insert: empty piece");
 
-    // Trova la y più bassa possibile mantenendo y non-negativa
-    int y = static_cast<int>(m_height) - static_cast<int>(p.side());
-    if (y < 0) y = 0;
-    while (containment(p, x, y - 1)) {
-        --y;
+    int y = -1;
+
+    // 1. Controlla se il pezzo entra almeno alla base (y=0)
+    if (containment(p, x, 0)) {
+        y = 0;
+        // 2. Prova a salire (y+1, y+2...) finché il pezzo sta nel campo 
+        // e non collide (trova la Y più grande possibile)
+        while (y + (int)p.side() < (int)m_height && containment(p, x, y + 1)) {
+            y++;
+        }
     }
 
-    if (!containment(p, x, y))
+    // Se non abbiamo trovato nessuna y valida (nemmeno 0)
+    if (y == -1)
         throw tetris_exception("GAME OVER");
 
     add(p, x, y);
 
-    // y rimane sempre >= 0 per rispettare la specifica
 
     // Lambda: controlla se una riga è piena
     auto is_row_full = [this](int r) -> bool {
@@ -110,7 +109,7 @@ void tetris::insert(piece const& p, int x) {
                     for (uint32_t j = 0; j < side; ++j) {
                         if (!p(i, j)) continue;
                         int fx = px + j;
-                        int fy = py + i;
+                        int fy = py + (side - 1 - i);
                         if (fx == int(x) && fy == r) {
                             found = true;
                             goto found_cell;
@@ -127,17 +126,11 @@ void tetris::insert(piece const& p, int x) {
     // Lambda: taglia riga r da tutti i pezzi che la toccano
     auto cut_row = [this](int r) {
         for (node* n = m_field; n != nullptr; n = n->next) {
-            piece& p = n->tp.p;
-            int py = n->tp.y;
-            uint32_t side = p.side();
-
-            int relative = r - py;
-            if (relative < 0 || relative >= int(side)) continue;
-
-            uint32_t i = relative; 
-
-            if (i < side) {
-                p.cut_row(i);
+            int relative_y = r - n->tp.y;
+            if (relative_y >= 0 && relative_y < (int)n->tp.p.side()) {
+                // Mappa la riga del campo all'indice interno del pezzo
+                uint32_t i = (n->tp.p.side() - 1) - relative_y;
+                n->tp.p.cut_row(i);
             }
         }
     };
@@ -203,7 +196,7 @@ void tetris::print_ascii_art(std::ostream& os) const {
                 if (!p(i, j)) continue;
 
                 int gx = px + j;
-                int gy = py + i; 
+                int gy = py + (side - 1 - i); 
 
                 if (gx >= 0 && gx < int(m_width) && gy >= 0 && gy < int(m_height)) {
                     grid[gy][gx] = color;
@@ -599,17 +592,23 @@ void piece::rotate() {
 }
 
 void piece::cut_row(uint32_t i) {
-    if (i >= m_side || !m_grid)
+    if (i >= m_side || !m_grid) 
         throw tetris_exception("cut_row: index out of bounds");
-
+    
+    // Libera la memoria della riga tagliata
     delete[] m_grid[i];
-
-    for (int j = i; j > 0; --j)
+    
+    // Sposta le righe SOPRA (indici < i) verso il BASSO (verso l'indice i)
+    // Esempio: se tagli i=2, la riga 1 va in 2, la riga 0 va in 1.
+    for (uint32_t j = i; j > 0; --j) {
         m_grid[j] = m_grid[j - 1];
-
+    }
+    
+    // Crea una nuova riga vuota in cima (indice 0)
     m_grid[0] = new bool[m_side];
-    for (uint32_t j = 0; j < m_side; ++j)
+    for (uint32_t j = 0; j < m_side; ++j) {
         m_grid[0][j] = false;
+    }
 }
 
 
@@ -646,10 +645,10 @@ static void write_quadrant(std::ostream& os, piece const& p, uint32_t i, uint32_
 
     uint32_t half = size / 2;
     os << '(';
-    write_quadrant(os, p, i, j, half);              // TL
-    write_quadrant(os, p, i, j + half, half);       // TR
-    write_quadrant(os, p, i + half, j, half);       // BL
-    write_quadrant(os, p, i + half, j + half, half); // BR
+    write_quadrant(os, p, i, j, half);                  // TL (Riga alta, colonna sx)
+    write_quadrant(os, p, i, j + half, half);           // TR (Riga alta, colonna dx)
+    write_quadrant(os, p, i + half, j, half);           // BL (Riga bassa, colonna sx)
+    write_quadrant(os, p, i + half, j + half, half);    // BR (Riga bassa, colonna dx)
     os << ')';
 }
 
@@ -696,9 +695,9 @@ static void parse_quadrant_helper(std::istream& is, piece& temp, uint32_t i, uin
         } else {
             // struttura ricorsiva (TL TR BL BR)
             uint32_t half = size / 2;
-            parse_quadrant_helper(is, temp, i, j, half);              // TL
-            parse_quadrant_helper(is, temp, i, j + half, half);       // TR
-            parse_quadrant_helper(is, temp, i + half, j, half);       // BL
+            parse_quadrant_helper(is, temp, i, j, half);               // TL
+            parse_quadrant_helper(is, temp, i, j + half, half);        // TR
+            parse_quadrant_helper(is, temp, i + half, j, half);        // BL
             parse_quadrant_helper(is, temp, i + half, j + half, half); // BR
             
             is >> std::ws;
