@@ -37,36 +37,32 @@ void tetris::add(piece const& p, int x, int y) {
 }
     
 bool tetris::containment(piece const& p, int x, int y) const {
-    if (y < 0) return false;  // y negativa non è permessa
-    
+    if (y < 0) return false;
     uint32_t side = p.side();
+
     for (uint32_t i = 0; i < side; ++i) {
         for (uint32_t j = 0; j < side; ++j) {
             if (!p(i, j)) continue;
 
-            int fx = x + j;
-            int fy = y + (side - 1 - i); 
+            int fx = x + (int)j;
+            int fy = y + (int)(side - 1 - i);
 
-            // Check bordi campo
             if (fx < 0 || fx >= (int)m_width || fy < 0 || fy >= (int)m_height)
                 return false;
 
-            // Check collisione con altri pezzi
             for (node* cur = m_field; cur != nullptr; cur = cur->next) {
-                // Se stiamo controllando un pezzo già nel campo contro se stesso, saltiamo
                 if (&cur->tp.p == &p) continue; 
 
                 int ox = cur->tp.x;
                 int oy = cur->tp.y;
-                uint32_t oside = cur->tp.p.side();
+                int oside = (int)cur->tp.p.side();
 
                 int rel_x = fx - ox;
                 int rel_y = fy - oy;
 
-                if (rel_x >= 0 && rel_x < (int)oside && rel_y >= 0 && rel_y < (int)oside) {
-                    // Mappa la coordinata di campo all'indice interno del pezzo esistente
-                    uint32_t oi = (oside - 1) - rel_y; 
-                    if (cur->tp.p(oi, rel_x)) return false;
+                if (rel_x >= 0 && rel_x < oside && rel_y >= 0 && rel_y < oside) {
+                    uint32_t oi = (uint32_t)(oside - 1 - rel_y);
+                    if (cur->tp.p(oi, (uint32_t)rel_x)) return false;
                 }
             }
         }
@@ -75,100 +71,64 @@ bool tetris::containment(piece const& p, int x, int y) const {
 }
 
 void tetris::insert(piece const& p, int x) {
-    if (p.empty())
-        throw tetris_exception("Invalid insert: empty piece");
+    if (p.empty()) throw tetris_exception("Empty piece");
 
     int y = -1;
-
-    // 1. Controlla se il pezzo entra almeno alla base (y=0)
     if (containment(p, x, 0)) {
         y = 0;
-        // 2. Prova a salire (y+1, y+2...) finché il pezzo sta nel campo 
-        // e non collide (trova la Y più grande possibile)
-        while (y + (int)p.side() < (int)m_height && containment(p, x, y + 1)) {
-            y++;
-        }
+        while (containment(p, x, y + 1)) y++;
     }
 
-    // Se non abbiamo trovato nessuna y valida (nemmeno 0)
-    if (y == -1)
-        throw tetris_exception("GAME OVER");
-
+    if (y == -1) throw tetris_exception("GAME OVER");
     add(p, x, y);
 
-
-    // Lambda: controlla se una riga è piena
     auto is_row_full = [this](int r) -> bool {
-        for (uint32_t x = 0; x < m_width; ++x) {
-            bool found = false;
+        for (int col = 0; col < (int)m_width; ++col) {
+            bool occupied = false;
             for (node* n = m_field; n != nullptr; n = n->next) {
-                const piece& p = n->tp.p;
-                int px = n->tp.x, py = n->tp.y;
-                uint32_t side = p.side();
-                for (uint32_t i = 0; i < side; ++i) {
-                    for (uint32_t j = 0; j < side; ++j) {
-                        if (!p(i, j)) continue;
-                        int fx = px + j;
-                        int fy = py + (side - 1 - i);
-                        if (fx == int(x) && fy == r) {
-                            found = true;
-                            goto found_cell;
-                        }
+                int rx = col - n->tp.x;
+                int ry = r - n->tp.y;
+                int s = (int)n->tp.p.side();
+                if (rx >= 0 && rx < s && ry >= 0 && ry < s) {
+                    // Cast esplicito 
+                    if (n->tp.p((uint32_t)(s - 1 - ry), (uint32_t)rx)) {
+                        occupied = true; 
+                        break;
                     }
                 }
             }
-        found_cell:
-            if (!found) return false;
+            if (!occupied) return false;
         }
         return true;
     };
 
-    // Lambda: taglia riga r da tutti i pezzi che la toccano
-    auto cut_row = [this](int r) {
-        for (node* n = m_field; n != nullptr; n = n->next) {
-            int relative_y = r - n->tp.y;
-            if (relative_y >= 0 && relative_y < (int)n->tp.p.side()) {
-                // Mappa la riga del campo all'indice interno del pezzo
-                uint32_t i = (n->tp.p.side() - 1) - relative_y;
-                n->tp.p.cut_row(i);
-            }
-        }
-    };
-
-    // Loop: taglia righe piene, rimuovi pezzi vuoti, fai cadere i pezzi
     bool changed = true;
     while (changed) {
         changed = false;
-
-        // 1. Taglia righe piene
-        for (int r = 0; r < int(m_height); ) {
+        // Taglio
+        for (int r = 0; r < (int)m_height; ) {
             if (is_row_full(r)) {
-                cut_row(r);
+                for (node* n = m_field; n != nullptr; n = n->next) {
+                    int ry = r - n->tp.y;
+                    if (ry >= 0 && ry < (int)n->tp.p.side())
+                        n->tp.p.cut_row((uint32_t)(n->tp.p.side() - 1 - ry));
+                }
                 m_score += m_width;
                 changed = true;
-            } else {
-                ++r;
-            }
+            } else r++;
         }
-
-        // 2. Rimuovi pezzi vuoti
+        // Pulizia
         node** curr = &m_field;
         while (*curr) {
             if ((*curr)->tp.p.empty()) {
-                node* to_delete = *curr;
-                *curr = (*curr)->next;
-                delete to_delete;
+                node* tmp = *curr; *curr = (*curr)->next; delete tmp;
                 changed = true;
-            } else {
-                curr = &(*curr)->next;
-            }
+            } else curr = &(*curr)->next;
         }
-
-        // 3. Fai cadere i pezzi se possono scendere
+        // Gravità
         for (node* n = m_field; n != nullptr; n = n->next) {
             while (n->tp.y > 0 && containment(n->tp.p, n->tp.x, n->tp.y - 1)) {
-                --(n->tp.y);
-                changed = true;
+                n->tp.y--; changed = true;
             }
         }
     }
@@ -394,26 +354,29 @@ std::ostream& operator<<(std::ostream& os, tetris const& t) {
     return os;
 }
 
-std::istream& operator>>(std::istream& is, tetris& t) {
-    uint32_t score, width, height;
-    if (!(is >> score >> width >> height))
-        throw tetris_exception("Invalid header format");
-
-    tetris temp(width, height, score);
-
+static void load_pieces_recursive(std::istream& is, tetris& t) {
     piece p;
     int x, y;
-    
-    while (is >> std::ws, is.peek() != EOF) {  // Controlla se ci sono altri dati
-        is >> p >> x >> y;
-        
-        if (is.fail() && !is.eof())
-            throw tetris_exception("Error reading pieces");
-            
-        if (is.good() || is.eof())
-            temp.add(p, x, y);
-    }
+    // std::ws rimuove gli spazi, is.peek() controlla se c'è altro
+    if (!(is >> std::ws) || is.peek() == EOF) return;
 
+    // Se leggiamo correttamente il pezzo e le coordinate
+    if (is >> p >> x >> y) {
+        load_pieces_recursive(is, t); 
+        t.add(p, x, y); 
+    } else {
+        // Se lo stream è corrotto ma non è finito, resetta lo stato o lancia eccezione
+        is.clear();
+    }
+}
+
+std::istream& operator>>(std::istream& is, tetris& t) {
+    uint32_t score, width, height;
+    if (!(is >> score >> width >> height)) 
+        if (is.eof()) return is; 
+        throw tetris_exception("Invalid header format");
+    tetris temp(width, height, score);
+    load_pieces_recursive(is, temp);
     t = std::move(temp);
     return is;
 }
@@ -721,25 +684,13 @@ static void parse_quadrant_helper(std::istream& is, piece& temp, uint32_t i, uin
 std::istream& operator>>(std::istream& is, piece& p) {
     uint32_t s;
     int color;
+    if (!(is >> s >> color)) return is;
 
-    if (!(is >> s >> color)) {
-        throw tetris_exception("Invalid piece header");
-    }
-
-    if (s == 0 || (s & (s - 1)) != 0)
-        throw tetris_exception("Invalid piece side");
-
-    if (color <= 0 || color > 255)
-        throw tetris_exception("Invalid piece color");
+    if (s == 0 || (s & (s - 1)) != 0) throw tetris_exception("Invalid side");
+    if (color <= 0 || color > 255) throw tetris_exception("Invalid color");
 
     piece temp(s, static_cast<uint8_t>(color));
-
-    // Inizia il parsing dall'intero pezzo
     parse_quadrant_helper(is, temp, 0, 0, s);
-
-    is >> std::ws;
-    if (is.peek() == '(' || is.peek() == '[')
-        throw tetris_exception("Extra data after piece");
 
     p = std::move(temp);
     return is;
