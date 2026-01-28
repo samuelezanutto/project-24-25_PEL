@@ -372,9 +372,11 @@ static void load_pieces_recursive(std::istream& is, tetris& t) {
 
 std::istream& operator>>(std::istream& is, tetris& t) {
     uint32_t score, width, height;
-    if (!(is >> score >> width >> height)) 
+    if (!(is >> score >> width >> height)){ 
         if (is.eof()) return is; 
+        else
         throw tetris_exception("Invalid header format");
+    }
     tetris temp(width, height, score);
     load_pieces_recursive(is, temp);
     t = std::move(temp);
