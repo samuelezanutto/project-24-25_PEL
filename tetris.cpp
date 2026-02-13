@@ -29,42 +29,31 @@ tetris::tetris(tetris const& rhs)
 
 
 void tetris::add(piece const& p, int x, int y) {
-    if (!containment(p, x, y))
-        throw tetris_exception("Invalid add: piece out of bounds or overlapping");
+    if (!containment(p, x, y)) throw tetris_exception("Invalid add: piece out of bounds or overlapping");
 
-     m_field = new node{{p, x, y}, m_field};
+    m_field = new node{{p, x, y}, m_field};
 }
     
 bool tetris::containment(piece const& p, int x, int y) const {
     if (y < 0) return false;
     uint32_t side = p.side();
-
     for (uint32_t i = 0; i < side; ++i) {
         for (uint32_t j = 0; j < side; ++j) {
             if (!p(i, j)) continue;
+            int fx = x + (int)j;
+            int fy = y + (int)(side - 1 - i);
 
-            int fx = x + j;
-            int fy = y + (side - 1 - i);
-
-            if (fx < 0 || fx >= int(m_width) || fy < 0 || fy >= int(m_height))
-                return false;
+            if (fx < 0 || fx >= (int)m_width || fy < 0 || fy >= (int)m_height) return false;
 
             for (node* cur = m_field; cur != nullptr; cur = cur->next) {
-                const piece& other = cur->tp.p;
-                int ox = cur->tp.x;
-                int oy = cur->tp.y;
-                uint32_t oside = other.side();
+                // Per add/insert standard: se p non è nella lista, cur != &p sempre.
+                if (&(cur->tp.p) == &p) continue;
 
-                for (uint32_t oi = 0; oi < oside; ++oi) {
-                    for (uint32_t oj = 0; oj < oside; ++oj) {
-                        if (!other(oi, oj)) continue;
-
-                        int ofx = ox + oj;
-                        int ofy = oy + (oside - 1 - oi);
-
-                        if (fx == ofx && fy == ofy)
-                            return false;
-                    }
+                int rx = fx - cur->tp.x;
+                int ry = fy - cur->tp.y;
+                int s = (int)cur->tp.p.side();
+                if (rx >= 0 && rx < s && ry >= 0 && ry < s) {
+                    if (cur->tp.p((uint32_t)(s - 1 - ry), (uint32_t)rx)) return false;
                 }
             }
         }
@@ -73,21 +62,19 @@ bool tetris::containment(piece const& p, int x, int y) const {
 }
 
 void tetris::insert(piece const& p, int x) {
-    if (p.empty()) throw tetris_exception("Invalid insert: empty piece");
+    if (p.empty()) throw tetris_exception("Empty piece");
 
-    // Trova Y massimo salendo riga per riga
-    int y = -1;
-    if (containment(p, x, 0)) {
-        y = 0;
-        while (containment(p, x, y + 1)) {
-            y++;
-        }
+    // 1. Trova Y più alta (algoritmo PDF)
+    int highest_y = -1;
+    for (int y = 0; y < (int)m_height; ++y) {
+        if (containment(p, x, y)) highest_y = y;
     }
+    if (highest_y == -1) throw tetris_exception("GAME OVER");
 
-    if (y == -1) throw tetris_exception("GAME OVER");
-    add(p, x, y);
+    // 2. Aggiungi il pezzo alla testa
+    add(p, x, highest_y);
 
-    // Lambda riga piena: usa coordinate relative per velocità
+    // Lambda per riga piena
     auto is_row_full = [this](int r) -> bool {
         for (int col = 0; col < (int)m_width; ++col) {
             bool occupied = false;
@@ -96,9 +83,7 @@ void tetris::insert(piece const& p, int x) {
                 int ry = r - n->tp.y;
                 int s = (int)n->tp.p.side();
                 if (rx >= 0 && rx < s && ry >= 0 && ry < s) {
-                    if (n->tp.p((uint32_t)(s - 1 - ry), (uint32_t)rx)) {
-                        occupied = true; break;
-                    }
+                    if (n->tp.p((uint32_t)(s - 1 - ry), (uint32_t)rx)) { occupied = true; break; }
                 }
             }
             if (!occupied) return false;
@@ -106,38 +91,35 @@ void tetris::insert(piece const& p, int x) {
         return true;
     };
 
+    // 3. Loop Cascata (Taglio -> Pulizia -> Gravità)
     bool changed = true;
     while (changed) {
         changed = false;
 
-        // 1. Taglio
+        // Taglio
         for (int r = 0; r < (int)m_height; ) {
             if (is_row_full(r)) {
                 for (node* n = m_field; n != nullptr; n = n->next) {
                     int ry = r - n->tp.y;
-                    if (ry >= 0 && ry < (int)n->tp.p.side()) {
+                    if (ry >= 0 && ry < (int)n->tp.p.side())
                         n->tp.p.cut_row((uint32_t)(n->tp.p.side() - 1 - ry));
-                    }
                 }
-                m_score += m_width;
-                changed = true;
+                m_score += m_width; changed = true;
             } else r++;
         }
 
-        // 2. Pulizia pezzi vuoti
+        // Rimozione pezzi vuoti
         node** curr = &m_field;
         while (*curr) {
             if ((*curr)->tp.p.empty()) {
-                node* tmp = *curr; *curr = (*curr)->next; delete tmp;
-                changed = true;
-            } else curr = &(*curr)->next;
+                node* tmp = *curr; *curr = (*curr)->next; delete tmp; changed = true;
+            } else curr = &((*curr)->next);
         }
 
-        // 3. Gravità 
+        // Gravità: Per ogni pezzo, proviamo a scendere finché possibile
         for (node* n = m_field; n != nullptr; n = n->next) {
             while (n->tp.y > 0 && containment(n->tp.p, n->tp.x, n->tp.y - 1)) {
-                n->tp.y--;
-                changed = true;
+                n->tp.y--; changed = true;
             }
         }
     }
@@ -216,10 +198,8 @@ tetris& tetris::operator=(tetris const& rhs) {
     return *this;
 }
 
-tetris::tetris(tetris&& rhs)
-    : m_score(rhs.m_score), m_width(rhs.m_width), m_height(rhs.m_height), m_field(rhs.m_field) {
-    rhs.m_score = rhs.m_width = rhs.m_height = 0;
-    rhs.m_field = nullptr;
+tetris::tetris(tetris&& rhs) : m_score(rhs.m_score), m_width(rhs.m_width), m_height(rhs.m_height), m_field(rhs.m_field) {
+    rhs.m_score = 0; rhs.m_width = 0; rhs.m_height = 0; rhs.m_field = nullptr;
 }
 
 tetris& tetris::operator=(tetris&& rhs) {
@@ -374,9 +354,7 @@ static void load_pieces_recursive(std::istream& is, tetris& t) {
     if (is >> p && is >> x && is >> y) {
         load_pieces_recursive(is, t); // Vai in fondo al file
         t.add(p, x, y);               // Aggiungi mentre torni indietro (preserva ordine)
-    } else {
-        throw tetris_exception("Malformed piece or coordinates in file");
-    }
+    } else if (!is.eof()) throw tetris_exception("Invalid format");
 }
 
 std::istream& operator>>(std::istream& is, tetris& t) {
@@ -399,9 +377,7 @@ std::istream& operator>>(std::istream& is, tetris& t) {
 piece::piece() : m_side(0), m_color(0), m_grid(nullptr) {}
 
 piece::piece(uint32_t s, uint8_t c) : m_side(0), m_color(0), m_grid(nullptr) {
-    if (s == 0)
-        throw tetris_exception("Side must be non-zero and a power of two.");
-    
+    if (s == 0 || (s & (s - 1)) != 0) throw tetris_exception("Invalid side");
     uint32_t tmp = s;
     while (tmp > 1 && tmp % 2 == 0)
         tmp /= 2;
@@ -423,17 +399,19 @@ piece::piece(uint32_t s, uint8_t c) : m_side(0), m_color(0), m_grid(nullptr) {
 }
 
 piece::~piece() {
-    for (uint32_t i = 0; i < m_side; ++i)
-        delete[] m_grid[i];
-    delete[] m_grid;
+    if (m_grid) {
+        for (uint32_t i = 0; i < m_side; ++i) delete[] m_grid[i];
+        delete[] m_grid;
+    }
 }
 
-piece::piece(piece const& rhs) : m_side(rhs.m_side), m_color(rhs.m_color) {
-    m_grid = new bool*[m_side];
-    for (uint32_t i = 0; i < m_side; ++i) {
-        m_grid[i] = new bool[m_side];
-        for (uint32_t j = 0; j < m_side; ++j)
-            m_grid[i][j] = rhs.m_grid[i][j];
+piece::piece(piece const& rhs) : m_side(rhs.m_side), m_color(rhs.m_color), m_grid(nullptr) {
+    if (rhs.m_grid) {
+        m_grid = new bool*[m_side];
+        for (uint32_t i = 0; i < m_side; ++i) {
+            m_grid[i] = new bool[m_side];
+            for (uint32_t j = 0; j < m_side; ++j) m_grid[i][j] = rhs.m_grid[i][j];
+        }
     }
 }
 
@@ -445,23 +423,18 @@ piece::piece(piece&& rhs) : m_side(rhs.m_side), m_color(rhs.m_color), m_grid(rhs
 
 piece& piece::operator=(piece const& rhs) {
     if (this == &rhs) return *this;
-
     // Dealloca memoria esistente
     for (uint32_t i = 0; i < m_side; ++i)
         delete[] m_grid[i];
     delete[] m_grid;
-
-    // Copia nuovi dati
-    m_side = rhs.m_side;
-    m_color = rhs.m_color;
-
-    m_grid = new bool*[m_side];
-    for (uint32_t i = 0; i < m_side; ++i) {
-        m_grid[i] = new bool[m_side];
-        for (uint32_t j = 0; j < m_side; ++j)
-            m_grid[i][j] = rhs.m_grid[i][j];
+    m_side = rhs.m_side; m_color = rhs.m_color; m_grid = nullptr;
+    if (rhs.m_grid) {
+        m_grid = new bool*[m_side];
+        for (uint32_t i = 0; i < m_side; ++i) {
+            m_grid[i] = new bool[m_side];
+            for (uint32_t j = 0; j < m_side; ++j) m_grid[i][j] = rhs.m_grid[i][j];
+        }
     }
-
     return *this;
 }
 
