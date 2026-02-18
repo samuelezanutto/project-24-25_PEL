@@ -48,7 +48,7 @@ bool tetris::containment(piece const& p, int x, int y) const {
 
             // 2. Collisione con altri pezzi
             for (node* cur = m_field; cur != nullptr; cur = cur->next) {
-                // IMPORTANTE: Se stiamo controllando lo stesso pezzo (indirizzo memoria), salta.
+                
                 // Questo serve durante la fase di gravità nella insert.
                 if (&(cur->tp.p) == &p) continue;
 
@@ -67,7 +67,7 @@ bool tetris::containment(piece const& p, int x, int y) const {
 }
 
 void tetris::insert(piece const& p, int x) {
-    // Il PDF dice che la insert gestisce la logica. Un pezzo vuoto non dovrebbe essere inserito.
+    
     if (p.empty()) throw tetris_exception("Cannot insert an empty piece");
 
     // 1. Trova la Y più profonda (la più grande possibile)
@@ -103,7 +103,7 @@ void tetris::insert(piece const& p, int x) {
             }
 
             if (full) {
-                // Se la riga è piena, tagliala in tutti i pezzi che la attraversano
+                // Se la riga è piena, taglio in tutti i pezzi che la attraversano
                 for (node* n = m_field; n != nullptr; n = n->next) {
                     int ry = n->tp.y - r;
                     if (ry >= 0 && ry < (int)n->tp.p.side()) {
@@ -115,7 +115,7 @@ void tetris::insert(piece const& p, int x) {
             }
         }
 
-        // 4. Pulizia: rimuovi i nodi i cui pezzi sono diventati vuoti dopo il cut_row
+        // 4. Pulizia: rimuove i nodi i cui pezzi sono diventati vuoti dopo il cut_row
         node** curr = &m_field;
         while (*curr) {
             if ((*curr)->tp.p.empty()) {
@@ -372,10 +372,10 @@ static void load_pieces_recursive(std::istream& is, tetris& t) {
         load_pieces_recursive(is, t); 
         
         // Poi aggiunge il pezzo corrente. 
-        // Usando add(), preserviamo l'ordine del file nella testa della lista (LIFO)
+        
         t.add(p, x, y); 
     } else {
-        // Se non riesce a leggere il pezzo e non siamo a fine file, è un errore
+        // Se non riesce a leggere il pezzo e non sono a fine file, è un errore
         if (!is.eof()) throw tetris_exception("Failed to parse piece in tetris file");
     }
 }
