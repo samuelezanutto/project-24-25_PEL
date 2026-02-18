@@ -35,24 +35,29 @@ void tetris::add(piece const& p, int x, int y) {
 }
     
 bool tetris::containment(piece const& p, int x, int y) const {
-    if (y < 0) return false;
     uint32_t side = p.side();
     for (uint32_t i = 0; i < side; ++i) {
         for (uint32_t j = 0; j < side; ++j) {
             if (!p(i, j)) continue;
+            
             int fx = x + (int)j;
-            int fy = y + (int)(side - 1 - i);
+            int fy = y - (int)(side - 1 - i); 
 
+            // 1. Verifica bordi del campo (Eccezione gestita da add/insert)
             if (fx < 0 || fx >= (int)m_width || fy < 0 || fy >= (int)m_height) return false;
 
+            // 2. Collisione con altri pezzi
             for (node* cur = m_field; cur != nullptr; cur = cur->next) {
-                // Per add/insert standard: se p non è nella lista, cur != &p sempre.
+                // IMPORTANTE: Se stiamo controllando lo stesso pezzo (indirizzo memoria), salta.
+                // Questo serve durante la fase di gravità nella insert.
                 if (&(cur->tp.p) == &p) continue;
 
                 int rx = fx - cur->tp.x;
-                int ry = fy - cur->tp.y;
+                int ry = cur->tp.y - fy; 
                 int s = (int)cur->tp.p.side();
+                
                 if (rx >= 0 && rx < s && ry >= 0 && ry < s) {
+                    // Mappatura riga interna: i_interno = s - 1 - ry
                     if (cur->tp.p((uint32_t)(s - 1 - ry), (uint32_t)rx)) return false;
                 }
             }
@@ -62,64 +67,73 @@ bool tetris::containment(piece const& p, int x, int y) const {
 }
 
 void tetris::insert(piece const& p, int x) {
-    if (p.empty()) throw tetris_exception("Empty piece");
+    // Il PDF dice che la insert gestisce la logica. Un pezzo vuoto non dovrebbe essere inserito.
+    if (p.empty()) throw tetris_exception("Cannot insert an empty piece");
 
-    // 1. Trova Y più alta (algoritmo PDF)
+    // 1. Trova la Y più profonda (la più grande possibile)
     int highest_y = -1;
     for (int y = 0; y < (int)m_height; ++y) {
         if (containment(p, x, y)) highest_y = y;
     }
-    if (highest_y == -1) throw tetris_exception("GAME OVER");
 
-    // 2. Aggiungi il pezzo alla testa
+    if (highest_y == -1) throw tetris_exception("GAME OVER");
+    
+    // 2. Aggiungi il pezzo (add lancia già tetris_exception se containment fallisce)
     add(p, x, highest_y);
 
-    // Lambda per riga piena
-    auto is_row_full = [this](int r) -> bool {
-        for (int col = 0; col < (int)m_width; ++col) {
-            bool occupied = false;
-            for (node* n = m_field; n != nullptr; n = n->next) {
-                int rx = col - n->tp.x;
-                int ry = r - n->tp.y;
-                int s = (int)n->tp.p.side();
-                if (rx >= 0 && rx < s && ry >= 0 && ry < s) {
-                    if (n->tp.p((uint32_t)(s - 1 - ry), (uint32_t)rx)) { occupied = true; break; }
-                }
-            }
-            if (!occupied) return false;
-        }
-        return true;
-    };
-
-    // 3. Loop Cascata (Taglio -> Pulizia -> Gravità)
     bool changed = true;
     while (changed) {
         changed = false;
 
-        // Taglio
-        for (int r = 0; r < (int)m_height; ) {
-            if (is_row_full(r)) {
+        // 3. Taglio righe: controlla dalla riga 0 alla m_height-1
+        for (int r = 0; r < (int)m_height; ++r) {
+            bool full = true;
+            for (int col = 0; col < (int)m_width; ++col) {
+                bool occupied = false;
                 for (node* n = m_field; n != nullptr; n = n->next) {
-                    int ry = r - n->tp.y;
-                    if (ry >= 0 && ry < (int)n->tp.p.side())
-                        n->tp.p.cut_row((uint32_t)(n->tp.p.side() - 1 - ry));
+                    int rx = col - n->tp.x;
+                    int ry = n->tp.y - r;
+                    int s = (int)n->tp.p.side();
+                    if (rx >= 0 && rx < s && ry >= 0 && ry < s && n->tp.p(s - 1 - ry, rx)) {
+                        occupied = true;
+                        break;
+                    }
                 }
-                m_score += m_width; changed = true;
-            } else r++;
+                if (!occupied) { full = false; break; }
+            }
+
+            if (full) {
+                // Se la riga è piena, tagliala in tutti i pezzi che la attraversano
+                for (node* n = m_field; n != nullptr; n = n->next) {
+                    int ry = n->tp.y - r;
+                    if (ry >= 0 && ry < (int)n->tp.p.side()) {
+                        n->tp.p.cut_row((uint32_t)(n->tp.p.side() - 1 - ry));
+                    }
+                }
+                m_score += m_width;
+                changed = true;
+            }
         }
 
-        // Rimozione pezzi vuoti
+        // 4. Pulizia: rimuovi i nodi i cui pezzi sono diventati vuoti dopo il cut_row
         node** curr = &m_field;
         while (*curr) {
             if ((*curr)->tp.p.empty()) {
-                node* tmp = *curr; *curr = (*curr)->next; delete tmp; changed = true;
-            } else curr = &((*curr)->next);
+                node* tmp = *curr;
+                *curr = (*curr)->next;
+                delete tmp;
+                changed = true;
+            } else {
+                curr = &((*curr)->next);
+            }
         }
 
-        // Gravità: Per ogni pezzo, proviamo a scendere finché possibile
+        // 5. Gravità: sposta ogni pezzo verso il basso (Y aumenta) finché possibile
         for (node* n = m_field; n != nullptr; n = n->next) {
-            while (n->tp.y > 0 && containment(n->tp.p, n->tp.x, n->tp.y - 1)) {
-                n->tp.y--; changed = true;
+            // Se Y+1 è ancora contenuto (grazie al check if (&(cur->tp.p) == &p) in containment)
+            while (n->tp.y + 1 < (int)m_height && containment(n->tp.p, n->tp.x, n->tp.y + 1)) {
+                n->tp.y++;
+                changed = true;
             }
         }
     }
@@ -344,17 +358,26 @@ std::ostream& operator<<(std::ostream& os, tetris const& t) {
 }
 
 static void load_pieces_recursive(std::istream& is, tetris& t) {
+    is >> std::ws;
+    if (is.peek() == EOF) return;
+
     piece p; 
     int x, y;
-    
-    // Salta spazi e controlla fine file
-    if (!(is >> std::ws) || is.peek() == EOF) return;
 
-    // Legge la tripla. Se manca qualcosa, eccezione.
-    if (is >> p && is >> x && is >> y) {
-        load_pieces_recursive(is, t); // Vai in fondo al file
-        t.add(p, x, y);               // Aggiungi mentre torni indietro (preserva ordine)
-    } else if (!is.eof()) throw tetris_exception("Invalid format");
+    // Prova a leggere una tripla completa
+    if (is >> p) {
+        if (!(is >> x >> y)) throw tetris_exception("Incomplete piece coordinates in tetris file");
+        
+        // Prima legge tutto il resto del file
+        load_pieces_recursive(is, t); 
+        
+        // Poi aggiunge il pezzo corrente. 
+        // Usando add(), preserviamo l'ordine del file nella testa della lista (LIFO)
+        t.add(p, x, y); 
+    } else {
+        // Se non riesce a leggere il pezzo e non siamo a fine file, è un errore
+        if (!is.eof()) throw tetris_exception("Failed to parse piece in tetris file");
+    }
 }
 
 std::istream& operator>>(std::istream& is, tetris& t) {
@@ -605,24 +628,33 @@ static void parse_quadrant_helper(std::istream& is, piece& temp, uint32_t i, uin
     if (!(is >> std::ws >> c1)) throw tetris_exception("Unexpected EOF");
     
     if (c1 == '(') {
-        if (!(is >> std::ws)) throw tetris_exception("Unexpected EOF");
+        is >> std::ws; // Consuma spazi prima di guardare il prossimo carattere
         if (is.peek() == ')') {
-            is.get(c2); // consuma ')'
+            is.get(c2); // Consuma ')'
+            // Riempie tutto il quadrante corrente
             for (uint32_t x = i; x < i + size; x++)
                 for (uint32_t y = j; y < j + size; y++) temp(x, y) = true;
         } else {
+            // Se c'è contenuto, la dimensione DEVE essere > 1 per permettere divisione
+            if (size <= 1) throw tetris_exception("Recursion depth exceeds side length");
+
             uint32_t half = size / 2;
             parse_quadrant_helper(is, temp, i, j, half);               // TL
             parse_quadrant_helper(is, temp, i, j + half, half);        // TR
             parse_quadrant_helper(is, temp, i + half, j, half);        // BL
             parse_quadrant_helper(is, temp, i + half, j + half, half); // BR
-            if (!(is >> std::ws >> c2) || c2 != ')') throw tetris_exception("Expected ')'");
+            
+            if (!(is >> std::ws >> c2) || c2 != ')') 
+                throw tetris_exception("Expected ')' to close quadrant");
         }
     } else if (c1 == '[') {
-        if (!(is >> std::ws >> c2) || c2 != ']') throw tetris_exception("Expected ']'");
-    } else throw tetris_exception("Invalid piece format");
+        if (!(is >> std::ws >> c2) || c2 != ']') 
+            throw tetris_exception("Expected ']' to close empty quadrant");
+        // Il quadrante rimane false (default di piece)
+    } else {
+        throw tetris_exception("Invalid character in piece format: " + std::string(1, c1));
+    }
 }
-
 
 std::istream& operator>>(std::istream& is, piece& p) {
     uint32_t s; 
