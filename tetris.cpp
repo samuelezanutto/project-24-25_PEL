@@ -65,19 +65,15 @@ bool tetris::containment(piece const& p, int x, int y) const {
 void tetris::insert(piece const& p, int x) {
     if (p.empty()) throw tetris_exception("Cannot insert an empty piece");
 
-    int y_start = (int)p.side() - 1;
-    int highest_y = -1;
+    int y = (int)p.side() - 1;
 
-    if (!containment(p, x, y_start)) throw tetris_exception("GAME OVER");
+    if (!containment(p, x, y)) throw tetris_exception("GAME OVER");
 
-    highest_y = y_start;
-    for (int test_y = y_start + 1; test_y < (int)m_height; ++test_y) {
-        if (containment(p, x, test_y)) {
-            highest_y = test_y;
-        }
+    while (y + 1 < (int)m_height && containment(p, x, y + 1)) {
+        y++;
     }
 
-    add(p, x, highest_y);
+    add(p, x, y);
 
     bool changed = true;
     while (changed) {
