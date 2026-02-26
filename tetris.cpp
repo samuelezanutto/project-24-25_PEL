@@ -65,27 +65,30 @@ bool tetris::containment(piece const& p, int x, int y) const {
 void tetris::insert(piece const& p, int x) {
     if (p.empty()) throw tetris_exception("Cannot insert an empty piece");
 
-    int y = (int)p.side() - 1;
-    if (!containment(p, x, y)) throw tetris_exception("GAME OVER");
+    int y_start = (int)p.side() - 1;
+    int highest_y = -1;
 
-    while (y + 1 < (int)m_height && containment(p, x, y + 1)) {
-        y++;
+    if (!containment(p, x, y_start)) throw tetris_exception("GAME OVER");
+
+    highest_y = y_start;
+    for (int test_y = y_start + 1; test_y < (int)m_height; ++test_y) {
+        if (containment(p, x, test_y)) {
+            highest_y = test_y;
+        }
     }
 
-    add(p, x, y);
+    add(p, x, highest_y);
 
     bool changed = true;
     while (changed) {
         changed = false;
         
-        for (int r = 0; r < (int)m_height; ++r) {
+        for (int r = 0; r < (int)m_height; ) { 
             bool full = true;
             int col = 0;
-            
             while (col < (int)m_width && full) {
                 bool occupied = false;
                 node* n = m_field;
-                
                 while (n != nullptr && !occupied) {
                     int rx = col - n->tp.x;
                     int ry = n->tp.y - r;
@@ -95,10 +98,7 @@ void tetris::insert(piece const& p, int x) {
                     }
                     n = n->next;
                 }
-                
-                if (!occupied) {
-                    full = false;
-                }
+                if (!occupied) full = false;
                 col++;
             }
 
@@ -111,6 +111,8 @@ void tetris::insert(piece const& p, int x) {
                 }
                 m_score += m_width;
                 changed = true;
+            } else {
+                r++; 
             }
         }
 
@@ -648,6 +650,7 @@ std::istream& operator>>(std::istream& is, piece& p) {
 
     piece temp(s, static_cast<uint8_t>(color));
     parse_quadrant_helper(is, temp, 0, 0, s);
+    is >> std::ws;
     
     p = std::move(temp);
     return is;
