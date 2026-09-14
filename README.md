@@ -4,14 +4,35 @@ This project involves implementing a simplified version of the classic game [Tet
 
 The project requires to implement two classes, `piece` and `tetris`, as described in this document.
 
+---
+
+## Implementation Status
+
+`tetris.hpp` and the rest of this document are the course-provided assignment brief, kept as-is for reference. `tetris.cpp` is my submitted implementation.
+
+**Implemented:** every method and operator declared in `tetris.hpp` for both `piece` and `tetris` has a body — constructors/destructors, copy/move semantics, comparison operators, `rotate()`, `cut_row()`, `containment()`, `insert()`, the recursive I/O format, and the forward iterators.
+
+**Verified**, by compiling with `-std=c++17 -fsanitize=address,undefined` and testing directly against the examples given in this document (no leaks or undefined behavior found in these cases):
+- Piece parsing/serialization round-trips exactly for the recursive-format examples above, including the whitespace-tolerant variant.
+- `rotate()` applied four times returns the original piece.
+- `cut_row()` shifts rows correctly.
+- Basic `insert()` scenarios (row clearing, score increment, removal of emptied pieces) behave as described.
+
+**Known issue:** `operator>>` for `tetris` reads pieces in file order and prepends each one to the internal list (via `add()`), so the resulting list ends up in the *reverse* of the file order. Re-parsing and re-serializing the exact "Figure 2" example above does not reproduce it byte-for-byte, which affects any grading test relying on `operator<<`/`operator>>` round-trip fidelity — the most likely source of lost points on this submission.
+
+This repo is left as the submitted snapshot rather than patched after the fact.
+
+---
+
 ### Table of contents
 
-1. [The `piece` class](#piece)
-2. [The `tetris` class](#tetris)
-3. [How to Test Your Code?](#testing)
-4. [Project Submission](#submission)
-5. [Project Evaluation](#evaluation)
-6. [GitHub Issues](#issues)
+1. [Implementation Status](#implementation-status)
+2. [The `piece` class](#piece)
+3. [The `tetris` class](#tetris)
+4. [How to Test Your Code?](#testing)
+5. [Project Submission](#submission)
+6. [Project Evaluation](#evaluation)
+7. [GitHub Issues](#issues)
 
 ## 1. The `piece` class <a name="piece"></a>
 
